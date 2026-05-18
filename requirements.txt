@@ -1,3 +1,6 @@
 groq
 pandas
 python-dotenv
+chromadb
+sentence-transformers
+wikipedia-api
