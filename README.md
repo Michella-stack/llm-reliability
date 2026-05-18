@@ -21,7 +21,7 @@ This project gives teams a concrete, repeatable way to measure that reliability 
 
 ## What This Project Does
 
-The project runs a structured reliability experiment in two steps:
+The project has three components:
 
 **1. Data Collection (`collect_responses.py`)**
 Sends 5 questions to an LLM 3 times each (15 API calls total) and saves every response to a CSV file. The questions are deliberately varied — different languages, domains, and levels of philosophical complexity — to stress-test the model across dimensions a business might care about.
@@ -31,6 +31,9 @@ A Jupyter notebook that loads the CSV and produces three analyses:
 - **Response length consistency** — how much does the length vary across runs for the same question?
 - **Similarity scores** — how semantically similar are the repeated responses to each other?
 - **Summary table** — a human-readable view of all 15 responses side by side
+
+**3. RAG Pipeline (`rag_pipeline.py`)**
+A Retrieval-Augmented Generation pipeline that grounds the model's answers in a real document source — Wikipedia — rather than relying on its training data alone. This is the practical counterpart to the reliability experiment: one way to *improve* consistency is to give the model a fixed source of truth to retrieve from.
 
 ---
 
@@ -61,6 +64,9 @@ Using non-English questions tests an additional reliability dimension: does the 
 | `difflib.SequenceMatcher` | Pairwise similarity scoring |
 | `python-dotenv` | Secure API key management |
 | Jupyter Notebook | Interactive analysis environment |
+| `wikipedia-api` | Wikipedia article retrieval for RAG |
+| `sentence-transformers` | Text embeddings (`all-MiniLM-L6-v2`) |
+| `ChromaDB` | Vector database for chunk storage and retrieval |
 
 ---
 
@@ -137,14 +143,62 @@ This generates `llm_responses.csv` with all 15 responses.
 jupyter notebook analyze_responses.ipynb
 ```
 
+### Run the RAG Pipeline
+
+```bash
+python3 rag_pipeline.py
+```
+
+By default this fetches the Wikipedia article on *Artificial Intelligence* and answers 5 questions grounded in its content. To use a different topic, edit the `TOPIC` and `QUESTIONS` variables at the bottom of `rag_pipeline.py`:
+
+```python
+TOPIC = "Climate change"
+QUESTIONS = [
+    "What causes climate change?",
+    "What are the projected effects on sea levels?",
+]
+```
+
+---
+
+## How the RAG Pipeline Works
+
+RAG (Retrieval-Augmented Generation) is a technique that reduces hallucination and improves consistency by anchoring the model's answers to a specific document, rather than relying on its general training knowledge.
+
+**For non-technical readers:** instead of asking the AI to answer from memory, RAG first looks up the most relevant passages from a document, then hands those passages to the AI along with the question. The AI can only answer using what it was given — like an open-book exam rather than a recall test.
+
+**For technical readers:** the pipeline runs as follows:
+
+```
+Wikipedia article (84,000+ chars)
+         ↓
+  Split into 211 overlapping chunks
+  (500 chars each, 100-char overlap)
+         ↓
+  Embed with sentence-transformers
+  (all-MiniLM-L6-v2)
+         ↓
+  Store vectors in ChromaDB (in-memory)
+         ↓
+  Query → embed → cosine similarity search
+  → retrieve top 4 chunks
+         ↓
+  Chunks + question → Groq (llama-3.3-70b-versatile)
+         ↓
+  Grounded answer
+```
+
+**Why this matters for reliability:** a model answering from retrieval is more likely to give consistent answers than one answering from parametric memory, because the source material is fixed. This makes RAG a practical reliability strategy for production deployments.
+
 ---
 
 ## Project Structure
 
 ```
 llm-reliability/
-├── collect_responses.py      # API calls and data collection
-├── analyze_responses.ipynb   # Visualizations and analysis
+├── collect_responses.py      # Reliability experiment — repeated LLM queries
+├── analyze_responses.ipynb   # Visualizations and analysis of collected data
+├── rag_pipeline.py           # RAG pipeline — Wikipedia → ChromaDB → Groq
 ├── requirements.txt          # Python dependencies
 ├── .env.example              # API key template
 └── README.md
@@ -159,3 +213,6 @@ llm-reliability/
 - [ ] Increase runs from 3 to 10+ for statistical significance
 - [ ] Test with temperature variations to quantify the creativity–consistency tradeoff
 - [ ] Add hallucination detection for factual questions
+- [ ] Run the reliability experiment on RAG answers to measure whether grounding improves consistency
+- [ ] Persist the ChromaDB vector store to disk for reuse across sessions
+- [ ] Add support for local documents (PDF, plain text) as RAG sources alongside Wikipedia
