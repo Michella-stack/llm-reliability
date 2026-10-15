@@ -1,572 +1,546 @@
-<title>Pixels to Action Pipeline</title>
+<title>De píxeles a decisiones de riesgo</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap">
 <style>
-/* Layout: a document-scanner sheet. Two swimlanes (ingest, query) share one spine
-   Document → Understanding → Reasoning → Answer; component kind is colour-coded so
-   the line between deterministic code and AI is visible at a glance. */
+/* Layout: same language as the Respons'Ara flow board, in black and white only.
+   Tiered flow diagram, step player + trace record under it, then grey panels.
+   Component kind is told apart by fill and stroke, never by colour. */
 :root {
-  --bg: #f3f5f7;
-  --paper: #ffffff;
-  --ink: #16202b;
-  --muted: #5a6876;
-  --line: #d5dce3;
-  --accent: #1d5fd1;
-  --k-det: #4b5b6b;   /* deterministic code / rules */
-  --k-ml: #0f7f78;    /* CV / classic ML */
-  --k-ai: #7a3fc4;    /* generative AI / agents */
-  --k-hum: #b46a00;   /* human in the loop */
-  --k-det-bg: #e8ecf0;
-  --k-ml-bg: #dff3f1;
-  --k-ai-bg: #efe6fa;
-  --k-hum-bg: #fbefdc;
-  --ok: #1f7a3d;
-  --warn: #a35a00;
-  --bad: #b3261e;
-  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
-  --f-body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
-  --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --bg: #ffffff;
+  --ink: #111111;
+  --muted: #6b6b6b;
+  --faint: #9a9a9a;
+  --line: #d2d2d2;
+  --panel: #f4f4f4;
+  --chip: #ebebeb;
+  --f: "Inter", "Helvetica Neue", Arial, system-ui, sans-serif;
+  color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0e141b; --paper: #151d26; --ink: #e5ebf1; --muted: #9aa8b6; --line: #2a3542;
-    --accent: #79a6ff;
-    --k-det: #a9b7c5; --k-ml: #4fd1c5; --k-ai: #c39bff; --k-hum: #f2b155;
-    --k-det-bg: #1f2833; --k-ml-bg: #10302e; --k-ai-bg: #2a1f3d; --k-hum-bg: #35270f;
-    --ok: #5cc98a; --warn: #f2b155; --bad: #ff8a80;
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #0e141b; --paper: #151d26; --ink: #e5ebf1; --muted: #9aa8b6; --line: #2a3542;
-  --accent: #79a6ff;
-  --k-det: #a9b7c5; --k-ml: #4fd1c5; --k-ai: #c39bff; --k-hum: #f2b155;
-  --k-det-bg: #1f2833; --k-ml-bg: #10302e; --k-ai-bg: #2a1f3d; --k-hum-bg: #35270f;
-  --ok: #5cc98a; --warn: #f2b155; --bad: #ff8a80;
-  color-scheme: dark;
-}
-
 * { box-sizing: border-box; }
-body {
-  background: var(--bg); color: var(--ink);
-  font-family: var(--f-body); font-size: 15px; line-height: 1.55;
-}
+body { background: var(--bg); color: var(--ink); font-family: var(--f); font-size: 15px; line-height: 1.5; }
 .wrap {
-  max-width: 1180px; margin: 0 auto;
+  max-width: 1240px; margin: 0 auto;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
   padding-block: 40px 64px;
-  display: grid; gap: 48px;
+  display: grid; gap: 64px;
 }
-h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; line-height: 1.15; }
-h1 { font-size: clamp(30px, 5vw, 48px); font-weight: 700; letter-spacing: -0.01em; }
-h2 { font-size: 24px; font-weight: 700; }
+h1, h2, h3 { margin: 0; text-wrap: balance; line-height: 1.15; }
+h2 { font-size: clamp(24px, 3.4vw, 36px); font-weight: 700; letter-spacing: -0.015em; }
 h3 { font-size: 16px; font-weight: 700; }
 p { margin: 0; }
-.eyebrow {
-  font-family: var(--f-mono); font-size: 12px; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--muted);
-}
-.mono { font-family: var(--f-mono); font-size: 12.5px; }
-section { display: grid; gap: 20px; }
-.lede { max-width: 68ch; color: var(--muted); font-size: 16px; }
+.label { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); }
 
-/* Header */
-header { display: grid; gap: 14px; }
-.spine {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-  font-family: var(--f-mono); font-size: 13px; margin-top: 6px;
+section { display: grid; gap: 24px; }
+.sec-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; }
+.sec-title { display: flex; align-items: center; gap: 16px; }
+.num {
+  flex: none; width: 38px; height: 38px; border-radius: 50%; background: var(--chip);
+  display: grid; place-items: center; font-size: 14px; font-weight: 600; color: var(--muted);
 }
-.spine span {
-  padding: 6px 12px; border: 1px solid var(--line); background: var(--paper); border-radius: 4px;
-}
-.spine i { font-style: normal; color: var(--muted); }
+.meta { color: var(--muted); font-size: 15px; }
+.lede { max-width: 72ch; color: var(--muted); font-size: 16px; }
 
-/* Legend */
-.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); }
-.legend > div { display: flex; align-items: center; gap: 8px; }
-.sw { width: 12px; height: 12px; border-radius: 2px; }
+/* Four-phase spine from the deck */
+.spine { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.phase { background: var(--panel); border-radius: 12px; padding: 14px 16px; display: grid; gap: 4px; min-width: 0; position: relative; }
+.phase p { font-size: 13.5px; color: #4a4a4a; }
+.phase:last-child { background: var(--ink); color: #fff; }
+.phase:last-child .label { color: #bdbdbd; }
+.phase:last-child p { color: #e0e0e0; }
 
-/* Kind chips */
-.kind {
-  display: inline-block; font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.06em;
-  text-transform: uppercase; padding: 2px 7px; border-radius: 3px; font-weight: 500;
-}
-.det { color: var(--k-det); background: var(--k-det-bg); }
-.ml  { color: var(--k-ml);  background: var(--k-ml-bg); }
-.ai  { color: var(--k-ai);  background: var(--k-ai-bg); }
-.hum { color: var(--k-hum); background: var(--k-hum-bg); }
+/* Diagram */
+.diagram { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.diagram svg { display: block; width: 100%; min-width: 980px; height: auto; }
+svg text { font-family: var(--f); }
+.n-title { font-size: 19px; font-weight: 700; fill: var(--ink); }
+.n-sub { font-size: 13.5px; fill: #4a4a4a; }
+.hum .n-title, .hum .n-sub { fill: #ffffff; }
+.tier { font-size: 13px; font-weight: 600; letter-spacing: 0.12em; fill: var(--faint); }
+.e-label { font-size: 13px; fill: var(--muted); }
+.node { cursor: pointer; transition: opacity .35s ease; }
+.node:focus { outline: none; }
+.node:focus-visible .ring { opacity: 1; stroke-dasharray: 4 3; }
+.ring { opacity: 0; transition: opacity .25s ease; }
+.node.cur .ring { opacity: 1; }
+.edge { transition: opacity .35s ease; }
+.dim { opacity: 0.22; }
 
-/* Lanes */
-.lane {
-  background: var(--paper); border: 1px solid var(--line); border-radius: 8px;
-  padding: 20px; display: grid; gap: 16px;
-}
-.lane-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 20px; }
-.lane-head p { color: var(--muted); font-size: 14px; max-width: 70ch; }
-.phase-row, .flow { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 22px; }
-.phase-row { gap: 22px; }
-.phase {
-  font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--muted); border-top: 2px solid var(--line); padding-top: 6px;
-}
-.flow { list-style: none; margin: 0; padding: 0; counter-reset: step; }
-.node {
-  position: relative; min-width: 0;
-  border: 1px solid var(--line); border-top: 3px solid var(--kc, var(--line)); border-radius: 6px;
-  padding: 12px 12px 14px; background: var(--bg);
-  display: flex; flex-direction: column; gap: 8px;
-}
-.node.det { --kc: var(--k-det); }
-.node.ml  { --kc: var(--k-ml); }
-.node.ai  { --kc: var(--k-ai); }
-.node.hum { --kc: var(--k-hum); }
-.node.det, .node.ml, .node.ai, .node.hum { color: var(--ink); background: var(--bg); }
-.node .top { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-.node .n { font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
-.node p { font-size: 13px; color: var(--muted); line-height: 1.45; }
-.node .out {
-  margin-top: auto; font-family: var(--f-mono); font-size: 11.5px; color: var(--ink);
-  border-top: 1px dashed var(--line); padding-top: 8px;
-}
-.node .out b { color: var(--muted); font-weight: 400; }
-.branch { display: grid; gap: 3px; font-family: var(--f-mono); font-size: 11.5px; }
-.branch .g { color: var(--ok); } .branch .w { color: var(--warn); } .branch .b { color: var(--bad); }
-.node:not(:last-child)::after {
-  content: ""; position: absolute; right: -17px; top: 50%;
-  width: 12px; height: 12px; transform: translateY(-50%);
-  background: var(--muted);
-  clip-path: polygon(0 20%, 60% 20%, 60% 0, 100% 50%, 60% 100%, 60% 80%, 0 80%);
-}
+.legend { display: flex; flex-wrap: wrap; gap: 10px 40px; color: #4a4a4a; font-size: 14px; }
+.legend > div { display: flex; align-items: center; gap: 10px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; }
+.sw.det { background: #fff; border: 1.5px solid #bdbdbd; }
+.sw.ml  { background: #e6e6e6; border: 1.5px solid #bdbdbd; }
+.sw.ai  { background: #fff; border: 2.5px solid var(--ink); }
+.sw.hum { background: var(--ink); }
 
-/* Bridge between lanes */
-.bridge {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;
+/* Player + record */
+.under { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 28px; align-items: stretch; }
+.card {
+  background: var(--panel); border-radius: 14px; padding: 26px 32px;
+  display: grid; gap: 12px; align-content: start; min-width: 0;
 }
-.store {
-  border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; background: var(--paper);
-  display: grid; gap: 4px; min-width: 0;
+.step-card { border-left: 4px solid var(--ink); }
+.step-card h3 { font-size: clamp(22px, 2.6vw, 30px); letter-spacing: -0.01em; }
+.step-card p { font-size: 18px; color: #3a3a3a; max-width: 62ch; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+button {
+  font: 600 13px var(--f); color: var(--ink); background: #fff; border: 1.5px solid var(--ink);
+  border-radius: 8px; padding: 8px 14px; cursor: pointer;
 }
-.store p { font-size: 13px; color: var(--muted); }
-.bridge-label { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
-.bridge-label::before, .bridge-label::after { content: ""; flex: 1; border-top: 1px dashed var(--line); }
+button.primary { background: var(--ink); color: #fff; }
+button:hover { background: var(--chip); }
+button.primary:hover { background: #333; }
+button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
-/* Trace */
-.trace { display: grid; gap: 0; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.trace-q { padding: 16px 20px; border-bottom: 1px solid var(--line); display: grid; gap: 6px; }
-.trace-q q { font-family: var(--f-display); font-size: 19px; font-weight: 500; quotes: "“" "”"; }
-.trace ol { list-style: none; margin: 0; padding: 0; }
-.trace li {
-  display: grid; grid-template-columns: 74px 120px minmax(0, 1fr); gap: 14px; align-items: baseline;
-  padding: 10px 20px; border-bottom: 1px solid var(--line); font-size: 14px;
+.record { gap: 10px; padding: 22px 22px; }
+.record .sub { font-size: 14px; color: #3a3a3a; }
+.rows { display: grid; gap: 2px; }
+.row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.3fr); gap: 10px; align-items: center;
+  font-size: 14px; padding: 5px 0; transition: opacity .35s ease;
 }
-.trace li:last-child { border-bottom: 0; }
-.trace .t { font-family: var(--f-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.trace .answer { background: var(--k-ai-bg); }
+.row b { font-weight: 600; }
+.row i { color: #4a4a4a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 6px; justify-self: start; white-space: nowrap; }
+.pill.ok { background: var(--ink); color: #fff; }
+.pill.flag { background: #fff; color: var(--ink); border: 1.5px solid var(--ink); }
 
-/* Grids */
-.cols-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.cols-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.panel {
-  background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px;
-  display: grid; gap: 10px; align-content: start; min-width: 0;
-}
-.panel ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; }
-.panel li::marker { color: var(--muted); }
+/* Panels */
+.cols-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.cols-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.panel { background: var(--panel); border-radius: 14px; padding: 22px 24px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.panel ul { margin: 0; padding-left: 18px; display: grid; gap: 7px; font-size: 14.5px; color: #2e2e2e; }
+.panel li::marker { color: var(--faint); }
+.panel.now { border-left: 4px solid var(--ink); }
+.panel.dark { background: var(--ink); color: #fff; }
+.panel.dark .label { color: #bdbdbd; }
+.panel.dark ul { color: #e8e8e8; }
 
-/* Autonomy ladder */
-.ladder { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.rung { padding: 16px; display: grid; gap: 6px; align-content: start; background: var(--paper); border-right: 1px solid var(--line); min-width: 0; }
-.rung:last-child { border-right: 0; }
-.rung .lvl { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
-.rung p { font-size: 13.5px; color: var(--muted); }
-.rung.l1 .lvl { color: var(--ok); }
-.rung.l2 .lvl { color: var(--ok); }
-.rung.l3 .lvl { color: var(--warn); }
-.rung.l4 .lvl { color: var(--bad); }
+.ladder { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.rung { border-radius: 12px; padding: 18px 20px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.rung p { font-size: 14px; color: #4a4a4a; }
+.rung.det { background: #fff; border: 1.5px solid #bdbdbd; }
+.rung.ml { background: #ececec; border: 1.5px solid #bdbdbd; }
+.rung.ai { background: #fff; border: 2.5px solid var(--ink); }
+.rung.hum { background: var(--ink); color: #fff; }
+.rung.hum .label { color: #bdbdbd; }
+.rung.hum p { color: #e0e0e0; }
 
-/* Tables */
-.tbl-wrap { overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; }
-table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 14px; }
-th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.tbl-wrap { overflow-x: auto; background: var(--panel); border-radius: 14px; }
+table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14.5px; }
+th, td { text-align: left; padding: 12px 18px; border-bottom: 1px solid #e2e2e2; vertical-align: top; }
+th { font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
 tr:last-child td { border-bottom: 0; }
-td.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.num-c { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
 
-/* MVP */
-.mvp { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.mvp .panel.now { border-color: var(--accent); }
-.tag-now { color: var(--accent); }
-
-footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+footer { color: var(--faint); font-size: 13px; border-top: 1px solid var(--line); padding-top: 18px; }
 
 @media (max-width: 900px) {
-  .phase-row { display: none; }
-  .flow { grid-template-columns: minmax(0, 1fr); gap: 20px; }
-  .node:not(:last-child)::after {
-    right: auto; left: 50%; top: auto; bottom: -17px;
-    transform: translateX(-50%) rotate(90deg);
-  }
-  .bridge, .cols-3, .cols-2, .mvp { grid-template-columns: minmax(0, 1fr); }
-  .ladder { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .rung:nth-child(2) { border-right: 0; }
-  .rung:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
-  .trace li { grid-template-columns: 60px minmax(0, 1fr); }
-  .trace li .k { grid-column: 2; }
-  .trace li > :last-child { grid-column: 1 / -1; }
+  .under, .cols-3, .cols-2 { grid-template-columns: minmax(0, 1fr); }
+  .ladder, .spine { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .card { padding: 20px; }
+  .step-card p { font-size: 16px; }
 }
 @media (max-width: 480px) {
-  .ladder { grid-template-columns: minmax(0, 1fr); }
-  .rung { border-right: 0; border-bottom: 1px solid var(--line); }
-  .rung:last-child { border-bottom: 0; }
-  .lane { padding: 14px; }
+  .ladder, .spine { grid-template-columns: minmax(0, 1fr); }
+  .row { grid-template-columns: minmax(0, 1fr) auto; }
+  .row i { grid-column: 1 / -1; white-space: normal; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .node, .edge, .row, .ring { transition: none; }
 }
 </style>
 
 <div class="wrap">
 
-<header>
-  <div class="eyebrow">Pixel in Motion · #CodeMeet Barcelona · 15 Oct 2026</div>
-  <h1>Pixels to Action: Document Intelligence RAG Pipeline</h1>
-  <p class="lede">A multi-agent assistant that lets banking and legal teams ask questions about scanned and mixed-quality documents and get answers they can trace back to the exact page and region. Documents are understood once on arrival; questions are answered from that index, with a verifier between the model and the user.</p>
-  <div class="spine" aria-label="Pipeline spine">
-    <span>Document / Image</span><i>→</i><span>Understanding</span><i>→</i><span>Reasoning</span><i>→</i><span>Answer / Action</span>
+<!-- 1 · Pipeline -->
+<section aria-labelledby="s1">
+  <div class="sec-head">
+    <div class="sec-title"><span class="num">1</span><h2 id="s1">De píxeles a decisiones de riesgo</h2></div>
+    <span class="meta">Pixel in Motion · Asistente de Inteligencia Documental · Octubre 2026</span>
   </div>
-</header>
+  <p class="lede">Un expediente hipotecario llega como decenas de escaneos. Lo entendemos una vez al llegar, cinco agentes trabajan sobre él dentro del banco y el analista de riesgos recibe una ficha preliminar en la que cada dato lleva su cita. La decisión sigue siendo suya.</p>
 
-<section aria-labelledby="scope">
-  <div class="eyebrow">1 · Understand the situation</div>
-  <h2 id="scope">Users, documents and scope</h2>
+  <div class="spine" aria-label="Las cuatro fases">
+    <div class="phase"><span class="label">Pixels</span><p>Escaneos, fotos de móvil y PDFs del expediente</p></div>
+    <div class="phase"><span class="label">Understanding</span><p>Limpieza, clasificación, OCR + layout y reglas</p></div>
+    <div class="phase"><span class="label">Reasoning</span><p>Agentes que completan, extraen, cruzan y verifican</p></div>
+    <div class="phase"><span class="label">Action</span><p>Ficha de riesgo con citas; el analista decide</p></div>
+  </div>
+
+  <div class="diagram">
+    <svg id="flow" viewBox="0 0 1600 600" role="img" aria-labelledby="flow-t">
+      <title id="flow-t">Pipeline: ingesta del expediente, cinco agentes on-premise, ficha de riesgo y decisión del analista</title>
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#9a9a9a"/>
+        </marker>
+        <marker id="ahk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#111111"/>
+        </marker>
+      </defs>
+
+      <text class="tier" x="2" y="22">TIER 1 · EXPEDIENTE E INGESTA · UNA VEZ, AL LLEGAR</text>
+      <g id="box"></g>
+      <text class="tier" x="46" y="220">TIER 2 · AGENTES SOBRE EL EXPEDIENTE · TODO ON-PREMISE</text>
+      <text class="tier" x="46" y="404">TIER 3 · FICHA Y DECISIÓN</text>
+
+      <g id="edges" fill="none" stroke-width="2" stroke-dasharray="7 6"></g>
+      <g id="nodes"></g>
+    </svg>
+  </div>
+
+  <div class="legend" aria-label="Leyenda">
+    <div><span class="sw det"></span>Código y reglas</div>
+    <div><span class="sw ml"></span>Visión por computador / ML clásico</div>
+    <div><span class="sw ai"></span>IA generativa · agente</div>
+    <div><span class="sw hum"></span>Persona</div>
+  </div>
+
+  <div class="under">
+    <div class="card step-card" aria-live="polite">
+      <span class="label" id="step-n">Vista general</span>
+      <h3 id="step-t">Un expediente entra, una ficha con citas sale</h3>
+      <p id="step-d">Pulsa Reproducir para seguir un expediente de ejemplo por el pipeline, o haz clic en cualquier caja para saltar a ese paso.</p>
+      <div class="controls">
+        <button id="prev" type="button">← Atrás</button>
+        <button id="play" type="button" class="primary">Reproducir</button>
+        <button id="next" type="button">Siguiente →</button>
+        <button id="all" type="button">Ver todo</button>
+      </div>
+    </div>
+    <div class="card record">
+      <span class="label">Traza · expediente de ejemplo</span>
+      <p class="sub">Compra de vivienda habitual, dos titulares, 23 escaneos.</p>
+      <div class="rows" id="rows"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 2 · Interpretación -->
+<section aria-labelledby="s2">
+  <div class="sec-head">
+    <div class="sec-title"><span class="num">2</span><h2 id="s2">Interpretación del reto</h2></div>
+  </div>
   <div class="cols-3">
     <div class="panel">
-      <h3>Who uses it</h3>
+      <span class="label">Usuario</span>
       <ul>
-        <li><b>Operations analysts</b> checking statements, transfers and KYC files</li>
-        <li><b>Legal / compliance</b> reading clauses, dates and obligations in contracts</li>
-        <li><b>Reviewers</b> who resolve low-confidence extractions</li>
-        <li><b>Auditors</b> who need to see why an answer was given</li>
+        <li><b>Analista de riesgos de admisión</b></li>
+        <li>Hoy revisa, extrae, calcula y cruza a mano cada expediente</li>
+        <li>No queremos sustituir al analista, sino quitarle el trabajo mecánico</li>
       </ul>
     </div>
     <div class="panel">
-      <h3>What arrives</h3>
+      <span class="label">Documentos</span>
       <ul>
-        <li>Native PDFs, scans, phone photos, faxes</li>
-        <li>Bank statements, loan contracts, powers of attorney, ID documents, invoices</li>
-        <li>Tables, stamps, signatures, handwritten notes</li>
-        <li>Spanish, Catalan and English; varying DPI and skew</li>
+        <li>Nóminas, extractos, nota simple, tasación</li>
+        <li>Escaneos y fotos de móvil de calidad variable</li>
+        <li>Layouts distintos por banco y empresa, tablas, sellos</li>
       </ul>
+    </div>
+    <div class="panel dark">
+      <span class="label">Fuera de alcance</span>
+      <ul>
+        <li>Decidir la aprobación</li>
+        <li>Scoring</li>
+        <li>Manuscritos</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 3 · Local -->
+<section aria-labelledby="s3">
+  <div class="sec-head">
+    <div class="sec-title"><span class="num">3</span><h2 id="s3">¿Por qué local? Soberanía del dato</h2></div>
+  </div>
+  <div class="cols-3">
+    <div class="panel">
+      <span class="label">El dato no sale</span>
+      <h3>La documentación no sale del banco</h3>
+      <p>OCR, embeddings, índice y modelos corren on-premise. Ningún escaneo ni prompt viaja a una API externa.</p>
     </div>
     <div class="panel">
-      <h3>Assumptions &amp; constraints</h3>
-      <ul>
-        <li>Personal and financial data: GDPR, EU data residency</li>
-        <li>Every answer must cite its source document and page</li>
-        <li>No autonomous changes to records or money movement</li>
-        <li>Out of scope at first: video, voice, real-time streams</li>
-      </ul>
+      <span class="label">Regulación</span>
+      <h3>Pensado para RGPD y DORA</h3>
+      <p>Datos personales y financieros bajo control del banco, con trazabilidad de cada respuesta y proveedores acotados.</p>
+    </div>
+    <div class="panel">
+      <span class="label">Coste</span>
+      <h3>Coste predecible a gran volumen</h3>
+      <p>Infraestructura propia en lugar de pago por token. Miles de expedientes al mes sin sorpresas en la factura.</p>
     </div>
   </div>
-</section>
-
-<section aria-labelledby="pipeline">
-  <div class="eyebrow">2 + 3 · Capabilities and solution design</div>
-  <h2 id="pipeline">The pipeline</h2>
-  <div class="legend" aria-label="Component kind legend">
-    <div><span class="sw" style="background:var(--k-det)"></span>Deterministic code &amp; rules</div>
-    <div><span class="sw" style="background:var(--k-ml)"></span>Computer vision / classic ML</div>
-    <div><span class="sw" style="background:var(--k-ai)"></span>Generative AI / agent</div>
-    <div><span class="sw" style="background:var(--k-hum)"></span>Human in the loop</div>
-  </div>
-
-  <div class="lane">
-    <div class="lane-head">
-      <h3>Lane A · Ingest &amp; understand <span class="mono" style="color:var(--muted);font-weight:400">· runs once per document, on arrival</span></h3>
-      <p>Pre-processing on arrival keeps query latency low and lets us validate extractions before anyone relies on them. Only low-confidence regions get re-read on demand.</p>
-    </div>
-    <div class="phase-row" aria-hidden="true">
-      <div class="phase">Document</div><div class="phase">Document</div><div class="phase">Understanding</div><div class="phase">Understanding</div><div class="phase">Understanding</div><div class="phase">Index</div>
-    </div>
-    <ol class="flow">
-      <li class="node det">
-        <div class="top"><span class="n">A1</span><span class="kind det">rules</span></div>
-        <h3>Intake</h3>
-        <p>Hash for dedup, source metadata, tenant and access tags. Document-type classifier picks the extraction schema.</p>
-        <div class="out"><b>out:</b> doc_id, type, ACL</div>
-      </li>
-      <li class="node ml">
-        <div class="top"><span class="n">A2</span><span class="kind ml">classic CV</span></div>
-        <h3>Quality gate</h3>
-        <p>Deskew, denoise, DPI and blur score per page.</p>
-        <div class="branch">
-          <span class="g">● clean → OCR path</span>
-          <span class="w">● degraded → OCR + vision LLM</span>
-          <span class="b">● unreadable → ask for re-scan</span>
-        </div>
-      </li>
-      <li class="node ml">
-        <div class="top"><span class="n">A3</span><span class="kind ml">OCR + layout</span></div>
-        <h3>Layout &amp; OCR</h3>
-        <p>Detect text blocks, tables, stamps, signatures. OCR with per-word confidence and bounding boxes. Table structure recovery.</p>
-        <div class="out"><b>out:</b> blocks + bbox + conf</div>
-      </li>
-      <li class="node ai">
-        <div class="top"><span class="n">A4</span><span class="kind ai">vision LLM</span></div>
-        <h3>Visual extraction agent</h3>
-        <p>Fills the type schema (IBAN, amounts, dates, parties, clauses). Reads stamps, handwriting and figures OCR misses. Every field keeps its page and box.</p>
-        <div class="out"><b>out:</b> fields.json + evidence</div>
-      </li>
-      <li class="node det">
-        <div class="top"><span class="n">A5</span><span class="kind det">rules</span></div>
-        <h3>Validate</h3>
-        <p>IBAN checksum, date ranges, opening + movements = closing balance, cross-field consistency.</p>
-        <div class="branch">
-          <span class="g">● pass → index</span>
-          <span class="w">● fail → review queue <span class="kind hum">human</span></span>
-        </div>
-      </li>
-      <li class="node det">
-        <div class="top"><span class="n">A6</span><span class="kind det">store</span></div>
-        <h3>Index</h3>
-        <p>Layout-aware chunks (section, clause, table row), dense embeddings + BM25, structured fields to SQL, page images kept.</p>
-        <div class="out"><b>out:</b> 3 stores, one doc_id</div>
-      </li>
-    </ol>
-  </div>
-
-  <div class="bridge-label">shared knowledge layer</div>
-  <div class="bridge">
-    <div class="store">
-      <span class="kind det">vector + keyword</span>
-      <h3>Chunk index</h3>
-      <p>Hybrid search over text, tables and image captions, filtered by ACL and doc type.</p>
-    </div>
-    <div class="store">
-      <span class="kind det">SQL</span>
-      <h3>Field store</h3>
-      <p>Validated, typed fields. Exact lookups and numeric answers come from here, never from free text.</p>
-    </div>
-    <div class="store">
-      <span class="kind det">object store</span>
-      <h3>Page images &amp; trace log</h3>
-      <p>Originals for re-reading and for showing the cited crop. Every run's inputs, versions and outputs.</p>
-    </div>
-  </div>
-
-  <div class="lane">
-    <div class="lane-head">
-      <h3>Lane B · Ask, reason, answer <span class="mono" style="color:var(--muted);font-weight:400">· runs per question</span></h3>
-      <p>An orchestrator routes each question to the cheapest path that can answer it, then a verifier checks the draft against the evidence before anything reaches the user.</p>
-    </div>
-    <div class="phase-row" aria-hidden="true">
-      <div class="phase">Query</div><div class="phase">Reasoning</div><div class="phase">Reasoning</div><div class="phase">Reasoning</div><div class="phase">Control</div><div class="phase">Answer / Action</div>
-    </div>
-    <ol class="flow">
-      <li class="node det">
-        <div class="top"><span class="n">B1</span><span class="kind det">rules</span></div>
-        <h3>Query gateway</h3>
-        <p>Authenticate, apply role-based access, redact PII before any external model call, attach conversation context.</p>
-        <div class="out"><b>out:</b> scoped query</div>
-      </li>
-      <li class="node ai">
-        <div class="top"><span class="n">B2</span><span class="kind ai">orchestrator</span></div>
-        <h3>Router agent</h3>
-        <div class="branch">
-          <span>field lookup → SQL tool</span>
-          <span>open question → RAG</span>
-          <span>multi-doc → planner</span>
-          <span>action ask → action agent</span>
-        </div>
-      </li>
-      <li class="node ml">
-        <div class="top"><span class="n">B3</span><span class="kind ml">retrieval</span></div>
-        <h3>Hybrid retrieve</h3>
-        <p>BM25 + vectors + metadata filters, then a cross-encoder reranker. Returns chunks with page crops.</p>
-        <div class="out"><b>out:</b> top-k evidence</div>
-      </li>
-      <li class="node ai">
-        <div class="top"><span class="n">B4</span><span class="kind ai">LLM</span></div>
-        <h3>Reasoning agent</h3>
-        <p>Drafts the answer citing doc, page and box. If evidence is low-confidence, re-reads the page image with the vision model.</p>
-        <div class="out"><b>out:</b> draft + citations</div>
-      </li>
-      <li class="node det">
-        <div class="top"><span class="n">B5</span><span class="kind det">guardrail</span></div>
-        <h3>Verifier</h3>
-        <p>Each claim must be supported by a cited chunk. Numbers are re-checked against the field store. Produces a confidence score.</p>
-        <div class="branch">
-          <span class="g">● ≥ 0.80 → answer</span>
-          <span class="w">● 0.50–0.80 → answer + warning</span>
-          <span class="b">● &lt; 0.50 → abstain, escalate</span>
-        </div>
-      </li>
-      <li class="node hum">
-        <div class="top"><span class="n">B6</span><span class="kind hum">human gate</span></div>
-        <h3>Answer or act</h3>
-        <p>Answer with highlighted source crops. Actions (flag discrepancy, open ticket, draft email) are proposed and run only after a person approves.</p>
-        <div class="out"><b>out:</b> answer · trace_id</div>
-      </li>
-    </ol>
-  </div>
-</section>
-
-<section aria-labelledby="trace">
-  <div class="eyebrow">End-to-end flow</div>
-  <h2 id="trace">One question, traced</h2>
-  <div class="trace">
-    <div class="trace-q">
-      <span class="eyebrow">Analyst asks</span>
-      <q>¿Cuál es el saldo final del extracto de marzo de la cuenta que acaba en 4417, y coincide con el contrato de préstamo?</q>
-    </div>
-    <ol>
-      <li><span class="t">+0 ms</span><span class="k"><span class="kind det">B1 gateway</span></span><span>User has role <span class="mono">ops-analyst</span>; scope limited to their branch's clients. Account number masked before the LLM call.</span></li>
-      <li><span class="t">+120 ms</span><span class="k"><span class="kind ai">B2 router</span></span><span>Two sub-tasks: a field lookup (closing balance) and a cross-document check against the loan contract.</span></li>
-      <li><span class="t">+180 ms</span><span class="k"><span class="kind det">SQL tool</span></span><span><span class="mono">statement 2026-03 · closing_balance = 12 480,35 €</span>, validated at ingest (opening + movements = closing).</span></li>
-      <li><span class="t">+450 ms</span><span class="k"><span class="kind ml">B3 retrieve</span></span><span>Contract clause 4.2 "cuota mensual" and the amortisation table on p. 7 ranked top 2.</span></li>
-      <li><span class="t">+2.1 s</span><span class="k"><span class="kind ai">B4 reason</span></span><span>Table row on p. 7 has OCR confidence 0.62, so the agent re-reads that crop with the vision model and gets 412,90 €.</span></li>
-      <li><span class="t">+2.6 s</span><span class="k"><span class="kind det">B5 verify</span></span><span>Both claims grounded; the instalment debited in March matches 412,90 €. Confidence 0.86.</span></li>
-      <li class="answer"><span class="t">+2.7 s</span><span class="k"><span class="kind hum">B6 answer</span></span><span>"Saldo final: 12 480,35 €. La cuota cargada (412,90 €) coincide con la cláusula 4.2." Two highlighted crops attached. Suggested action: none.</span></li>
-    </ol>
-  </div>
-</section>
-
-<section aria-labelledby="autonomy">
-  <div class="eyebrow">AI responsibilities</div>
-  <h2 id="autonomy">How much autonomy</h2>
   <div class="ladder">
-    <div class="rung l1"><span class="lvl">Autonomous</span><h3>Read &amp; extract</h3><p>Classify, OCR, extract fields, index. Validated by rules, sampled by reviewers.</p></div>
-    <div class="rung l2"><span class="lvl">Autonomous, cited</span><h3>Answer</h3><p>Answer questions with citations, or abstain. Never answer without evidence.</p></div>
-    <div class="rung l3"><span class="lvl">Human approves</span><h3>Recommend &amp; act</h3><p>Flag discrepancies, open tickets, draft replies. A person clicks to execute.</p></div>
-    <div class="rung l4"><span class="lvl">Never</span><h3>Change records</h3><p>No payments, no edits to core banking data, no legal decisions.</p></div>
-  </div>
-  <div class="cols-2">
-    <div class="panel">
-      <h3>Where AI is the right tool</h3>
-      <ul>
-        <li>Reading degraded scans, stamps and handwriting (vision LLM)</li>
-        <li>Mapping varied layouts to one schema without a template per bank</li>
-        <li>Understanding the question and planning multi-document checks</li>
-        <li>Writing the answer in the user's language with citations</li>
-      </ul>
-    </div>
-    <div class="panel">
-      <h3>Where rules or classic ML are better</h3>
-      <ul>
-        <li>Image quality, deskew and blur scoring: classic CV, cheap and predictable</li>
-        <li>Checksums, totals, date logic: deterministic validation</li>
-        <li>Access control and PII redaction: never delegated to a model</li>
-        <li>Exact numeric answers: SQL over validated fields, not generated text</li>
-      </ul>
-    </div>
+    <div class="rung det"><span class="label">Autónomo</span><h3>Leer y extraer</h3><p>Clasificar, OCR, extraer campos, indexar. Validado con reglas.</p></div>
+    <div class="rung ai"><span class="label">Autónomo, con cita</span><h3>Señalar y responder</h3><p>Lo que falta, incoherencias, respuestas RAG. Sin fuente no hay dato.</p></div>
+    <div class="rung ml"><span class="label">Propone</span><h3>Ficha preliminar</h3><p>Datos, ratios y alertas. Un borrador para el analista, nunca un veredicto.</p></div>
+    <div class="rung hum"><span class="label">Solo el analista</span><h3>Decidir</h3><p>Aprobar, denegar o pedir documentos.</p></div>
   </div>
 </section>
 
-<section aria-labelledby="trust">
-  <div class="eyebrow">4 · Trust &amp; control</div>
-  <h2 id="trust">Evaluation, risks and fallbacks</h2>
+<!-- 4 · Trust -->
+<section aria-labelledby="s4">
+  <div class="sec-head">
+    <div class="sec-title"><span class="num">4</span><h2 id="s4">Confianza y control</h2></div>
+    <span class="meta">Objetivos propuestos, por validar</span>
+  </div>
   <div class="tbl-wrap">
     <table>
-      <thead><tr><th>Stage</th><th>Metric</th><th>MVP target</th><th>Measured on</th></tr></thead>
+      <thead><tr><th>Componente</th><th>Métrica</th><th>Objetivo MVP</th><th>Medido con</th></tr></thead>
       <tbody>
-        <tr><td>OCR</td><td>Character error rate</td><td class="num">≤ 3 %</td><td>Golden set, split by scan quality</td></tr>
-        <tr><td>Extraction</td><td>Field-level exact match</td><td class="num">≥ 90 %</td><td>200 annotated documents</td></tr>
-        <tr><td>Retrieval</td><td>Recall@5 of the correct chunk</td><td class="num">≥ 85 %</td><td>300 Q&amp;A pairs with gold citations</td></tr>
-        <tr><td>Answer</td><td>Faithfulness (claims supported)</td><td class="num">≥ 95 %</td><td>LLM judge + weekly human sample</td></tr>
-        <tr><td>Answer</td><td>Citation precision</td><td class="num">≥ 90 %</td><td>Gold citations</td></tr>
-        <tr><td>Control</td><td>Correct abstention on unanswerable questions</td><td class="num">≥ 80 %</td><td>50 deliberately unanswerable questions</td></tr>
-        <tr><td>Ops</td><td>Latency p95 · cost per question</td><td class="num">≤ 6 s · ≤ 0,03 €</td><td>Production traces</td></tr>
+        <tr><td>Clasificación</td><td>Documentos bien clasificados</td><td class="num-c">≥ 97 %</td><td>Golden set de 100 expedientes anotados</td></tr>
+        <tr><td>Extracción</td><td>Campos de la ficha exactos</td><td class="num-c">≥ 90 %</td><td>Fichas rellenadas por analistas</td></tr>
+        <tr><td>Completitud</td><td>Documentos que faltan detectados</td><td class="num-c">≥ 95 %</td><td>Expedientes con faltas conocidas</td></tr>
+        <tr><td>Coherencia</td><td>Precisión de las alertas</td><td class="num-c">≥ 80 %</td><td>Incoherencias inyectadas + revisión</td></tr>
+        <tr><td>Consulta</td><td>Respuestas fundamentadas en la cita</td><td class="num-c">≥ 95 %</td><td>Juez LLM local + muestra humana semanal</td></tr>
+        <tr><td>Negocio</td><td>Tiempo de análisis por expediente</td><td class="num-c">−50 %</td><td>Piloto con analistas, antes / después</td></tr>
       </tbody>
     </table>
   </div>
   <div class="cols-3">
     <div class="panel">
-      <h3>Failure modes</h3>
+      <span class="label">Modos de fallo</span>
       <ul>
-        <li>Misread digit in a scanned amount</li>
-        <li>Table rows merged or shifted</li>
-        <li>Answer drawn from the wrong client's document</li>
-        <li>Fluent answer with no supporting evidence</li>
-        <li>Instructions hidden inside a document (prompt injection)</li>
+        <li>Un dígito mal leído en un importe de nómina</li>
+        <li>Filas de un extracto desplazadas</li>
+        <li>Dato de un titular asignado al otro</li>
+        <li>Respuesta fluida sin fuente</li>
+        <li>Instrucciones ocultas en un documento</li>
       </ul>
     </div>
     <div class="panel">
-      <h3>Controls &amp; fallbacks</h3>
+      <span class="label">Controles y fallback</span>
       <ul>
-        <li>Rule validation before indexing; failures go to review</li>
-        <li>ACL filter applied in retrieval, not in the prompt</li>
-        <li>Verifier blocks ungrounded claims; abstain below 0.50</li>
-        <li>Document text treated as data, never as instructions</li>
-        <li>PII redaction and EU-hosted models for sensitive types</li>
+        <li>Reglas antes de indexar; lo que falla, a revisión</li>
+        <li>El verificador exige cita o lanza alerta</li>
+        <li>Los ratios se calculan con código, no con el LLM</li>
+        <li>El texto de los documentos es dato, nunca instrucción</li>
+        <li>Con poca confianza, el campo queda vacío y marcado</li>
       </ul>
     </div>
     <div class="panel">
-      <h3>Observability</h3>
+      <span class="label">Observabilidad</span>
       <ul>
-        <li>One <span class="mono">trace_id</span> per question: chunks, prompts, model versions, scores</li>
-        <li>OCR confidence distribution per source, to catch a bad scanner</li>
-        <li>Abstention and reviewer-override rate over time</li>
-        <li>User thumbs-down feeds the golden set</li>
+        <li>Traza por expediente: documentos, versiones de modelo, citas</li>
+        <li>Confianza del OCR por canal de entrada</li>
+        <li>Correcciones del analista por campo y por agente</li>
+        <li>Cada corrección alimenta el golden set</li>
       </ul>
     </div>
   </div>
 </section>
 
-<section aria-labelledby="mvp">
-  <div class="eyebrow">5 · From concept to MVP</div>
-  <h2 id="mvp">What we build first</h2>
-  <div class="mvp">
+<!-- 5 · MVP -->
+<section aria-labelledby="s5">
+  <div class="sec-head">
+    <div class="sec-title"><span class="num">5</span><h2 id="s5">Qué construimos primero</h2></div>
+  </div>
+  <div class="cols-2">
     <div class="panel now">
-      <span class="eyebrow tag-now">MVP · 6–8 weeks</span>
-      <h3>Statements and loan contracts, Q&amp;A with citations</h3>
+      <span class="label">MVP</span>
+      <h3>Ficha preliminar para compra de vivienda habitual</h3>
       <ul>
-        <li>Two document types, Spanish only, PDFs and scans</li>
-        <li>A1–A6 and B1–B5; actions limited to "flag for review"</li>
-        <li>OCR and layout bought as a managed service; orchestration, validation and evaluation built in-house</li>
-        <li>Reuse this repo's RAG core (ChromaDB, sentence-transformers, Groq) with a multilingual embedder and BM25 added</li>
-        <li>Single router + reasoning agent; no planner yet</li>
-        <li>Golden set and evaluation harness built in week 1</li>
+        <li>Cuatro tipos: nómina, extracto, nota simple, tasación</li>
+        <li>Agentes de Completitud, Extracción y Verificador; Coherencia en sus cruces básicos</li>
+        <li>Todo on-premise: OCR open source, LLM de pesos abiertos servido en local</li>
+        <li>Reutiliza el núcleo RAG de este repo (ChromaDB, sentence-transformers) con embeddings multilingües</li>
+        <li>Golden set y arnés de evaluación desde la primera semana</li>
       </ul>
     </div>
     <div class="panel">
-      <span class="eyebrow">Phase 2</span>
-      <h3>More documents, more autonomy</h3>
+      <span class="label">Fase 2</span>
+      <h3>Más documentos, más preguntas</h3>
       <ul>
-        <li>KYC, powers of attorney, invoices; Catalan and English</li>
-        <li>Multi-document planner agent and cross-client analytics</li>
-        <li>Approved actions: tickets, drafted emails, CRM notes</li>
-        <li>Fine-tuned extractor for the highest-volume layouts</li>
-        <li>Active learning from reviewer corrections</li>
+        <li>IRPF, vida laboral, contratos de arras, autónomos</li>
+        <li>Agente de Consulta abierto a cualquier pregunta del analista</li>
+        <li>Cruces avanzados entre titulares y expedientes</li>
+        <li>Extractor ajustado a los layouts más frecuentes</li>
+        <li>Aprendizaje a partir de las correcciones del analista</li>
       </ul>
     </div>
   </div>
   <div class="cols-3">
     <div class="panel">
-      <h3>Hypotheses to validate</h3>
+      <span class="label">Hipótesis a validar</span>
       <ul>
-        <li>OCR + vision LLM beats vision-only on scanned tables at lower cost</li>
-        <li>Citations cut analyst checking time by half</li>
-        <li>An abstain threshold keeps faithfulness ≥ 95 % without abstaining on more than 15 % of questions</li>
+        <li>Un modelo local alcanza la calidad necesaria en escaneos malos</li>
+        <li>Las citas reducen a la mitad el tiempo de revisión</li>
+        <li>El analista confía en la ficha y no la rehace</li>
       </ul>
     </div>
     <div class="panel">
-      <h3>Trade-offs we accept now</h3>
+      <span class="label">Trade-offs aceptados</span>
       <ul>
-        <li>Pre-processing cost for documents nobody queries</li>
-        <li>Higher latency from the verifier in exchange for trust</li>
-        <li>Narrow scope: two types done well instead of ten done badly</li>
+        <li>Modelos locales algo menos capaces a cambio de soberanía</li>
+        <li>Inversión en hardware a cambio de coste predecible</li>
+        <li>Un tipo de operación bien hecho antes que todos a medias</li>
       </ul>
     </div>
     <div class="panel">
-      <h3>Biggest risk · go criteria</h3>
+      <span class="label">Mayor riesgo · cuándo seguir</span>
       <ul>
-        <li><b>Risk:</b> poor scans of tables and handwritten notes drive extraction below target</li>
-        <li><b>Go to phase 2 when:</b> targets above hold for 4 weeks and reviewers confirm the time saving</li>
+        <li><b>Riesgo:</b> la calidad de fotos de móvil y tablas de extractos</li>
+        <li><b>Seguimos si</b> los objetivos se mantienen 4 semanas en piloto y los analistas confirman el ahorro</li>
       </ul>
     </div>
   </div>
 </section>
 
-<footer>Pixel in Motion team · Workshop "Pixels to Action: Designing a Multi-Agent Visual Intelligence System", Accenture &amp; Codemotion. Targets are proposals to validate, not measured results.</footer>
+<footer>Pixel in Motion · Workshop "Pixels to Action: Designing a Multi-Agent Visual Intelligence System", Accenture &amp; Codemotion, Barcelona, 15 oct 2026. Las cifras del expediente de ejemplo son ilustrativas.</footer>
 
 </div>
+
+<script>
+(function () {
+  var NS = "http://www.w3.org/2000/svg";
+  var H = 96;
+  // k: det | ml | ai | hum ; s = step at which the node is reached
+  var nodes = [
+    { x: 0,    y: 34,  w: 230, k: "det", s: 1,  t: "Expediente", l: ["Nóminas, extractos,", "nota simple, tasación"] },
+    { x: 270,  y: 34,  w: 230, k: "ml",  s: 2,  t: "Limpieza", l: ["Endereza, limpia, nitidez", "Fotos de móvil y escaneos"] },
+    { x: 540,  y: 34,  w: 230, k: "ml",  s: 3,  t: "Clasificación", l: ["Qué es cada documento", "y de qué titular"] },
+    { x: 810,  y: 34,  w: 230, k: "ml",  s: 4,  t: "OCR + layout", l: ["Texto, tablas, sellos", "Confianza y caja por palabra"] },
+    { x: 1080, y: 34,  w: 230, k: "det", s: 5,  t: "Validación", l: ["Fechas, importes, NIF, IBAN", "Lo que falla, a revisión"] },
+    { x: 1350, y: 34,  w: 230, k: "det", s: 6,  t: "Índice", l: ["Fragmentos + campos", "Páginas para poder citar"] },
+    { x: 46,   y: 232, w: 286, k: "ai",  s: 7,  t: "Completitud", l: ["Qué falta", "Checklist por tipo de operación"] },
+    { x: 354,  y: 232, w: 286, k: "ai",  s: 8,  t: "Extracción", l: ["Rellena la ficha", "Ingresos, deudas, valor, cargas"] },
+    { x: 662,  y: 232, w: 286, k: "ai",  s: 9,  t: "Coherencia", l: ["Cruza documentos", "Nómina · extracto · nota simple"] },
+    { x: 970,  y: 232, w: 286, k: "ai",  s: 10, t: "Consulta", l: ["RAG con citas", "Responde al analista"] },
+    { x: 1278, y: 232, w: 286, k: "ai",  s: 11, t: "Verificador", l: ["Cita o alerta", "Sin fuente no hay dato"] },
+    { x: 670,  y: 420, w: 300, k: "ml",  s: 12, t: "Ficha de riesgo preliminar", l: ["Datos, ratios y alertas", "Cada dato con su cita"] },
+    { x: 1060, y: 420, w: 300, k: "hum", s: 13, t: "Analista de riesgos", l: ["Aprueba, deniega", "o pide documentos"] }
+  ];
+  var edges = [
+    { p: [[232,82],[266,82]], s: 2 },
+    { p: [[502,82],[536,82]], s: 3 },
+    { p: [[772,82],[806,82]], s: 4 },
+    { p: [[1042,82],[1076,82]], s: 5 },
+    { p: [[1312,82],[1346,82]], s: 6 },
+    { p: [[1465,130],[1465,192]], s: 7, lab: [1476, 168, "expediente indexado"] },
+    { p: [[820,342],[820,416]], s: 12, lab: [832, 384, "hallazgos con cita"] },
+    { p: [[972,468],[1056,468]], s: 13, dark: 1 },
+    { p: [[1210,516],[1210,566],[12,566],[12,160],[60,160],[60,133]], s: 13, dark: 1, lab: [420, 558, "pide los documentos que faltan"] }
+  ];
+  var steps = [
+    null,
+    ["Llega el expediente", "Una compra de vivienda con dos titulares: 23 escaneos entre nóminas, extractos, nota simple y tasación, muchos de ellos fotos de móvil."],
+    ["Limpia cada página", "Visión clásica endereza, limpia y mide la nitidez. Las fotos borrosas se marcan para leerlas con más cuidado."],
+    ["Clasifica", "Un clasificador decide qué es cada documento y a qué titular pertenece: 4 nóminas, 6 extractos, nota simple, tasación y DNI."],
+    ["Lee texto y estructura", "OCR y detección de layout sacan texto, tablas de movimientos y sellos, con una confianza y una caja por palabra."],
+    ["Valida con reglas", "Código, no IA: formatos de NIF e IBAN, fechas dentro de plazo, importes coherentes. Una nómina con fecha fuera de rango queda marcada."],
+    ["Indexa el expediente", "Fragmentos que respetan el layout, campos estructurados y las páginas originales, todo dentro del banco, listo para citar."],
+    ["Completitud: qué falta", "El agente compara lo recibido con el checklist de la operación. Falta la declaración de IRPF del segundo titular."],
+    ["Extracción: rellena la ficha", "Ingresos netos, deudas, valor de tasación y cargas. Cada valor apunta a la página y la caja de donde sale."],
+    ["Coherencia: cruza documentos", "La nómina dice 2.430 € netos y el extracto muestra ingresos de 2.250 €. El agente lo señala con las dos citas."],
+    ["Consulta: RAG con citas", "El analista pregunta si la nota simple tiene cargas. Respuesta: ninguna, con la página 2 resaltada."],
+    ["Verificador: cita o alerta", "Revisa cada dato de la ficha. 41 de 42 tienen fuente; el que no, se convierte en alerta en vez de en dato."],
+    ["Ficha de riesgo preliminar", "Datos, ratios calculados con código (como la tasa de esfuerzo) y alertas, cada uno con su cita."],
+    ["El analista decide", "Aprueba, deniega o pide documentos. Aquí pide el IRPF que falta, y el expediente vuelve a entrar por el principio."]
+  ];
+  var rows = [
+    { s: 3,  f: "clasificados", v: "23 / 23", ok: 1, q: "4 nóminas, 6 extractos, nota simple…" },
+    { s: 5,  f: "validación", v: "1 alerta", ok: 0, q: "nómina con fecha fuera de plazo" },
+    { s: 7,  f: "completitud", v: "falta", ok: 0, q: "IRPF del segundo titular" },
+    { s: 8,  f: "ingresos netos", v: "2.430 €", ok: 1, q: "media de 3 nóminas, p. 1–3" },
+    { s: 9,  f: "coherencia", v: "alerta", ok: 0, q: "nómina vs extracto: −180 €/mes" },
+    { s: 10, f: "cargas", v: "ninguna", ok: 1, q: "nota simple, p. 2" },
+    { s: 11, f: "con cita", v: "41 / 42", ok: 1, q: "1 dato sin fuente → alerta" },
+    { s: 12, f: "tasa de esfuerzo", v: "32 %", ok: 1, q: "cuota / ingresos netos" },
+    { s: 13, f: "analista", v: "pide docs", ok: 0, q: "IRPF del segundo titular" }
+  ];
+
+  var gB = document.getElementById("box"), gE = document.getElementById("edges"), gN = document.getElementById("nodes");
+  function el(tag, attrs, parent) {
+    var e = document.createElementNS(NS, tag);
+    for (var a in attrs) e.setAttribute(a, attrs[a]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  var boxEl = el("rect", { x: 30, y: 196, width: 1550, height: 146, rx: 16, fill: "none", stroke: "#bdbdbd", "stroke-width": 1.5, "stroke-dasharray": "6 5", "class": "edge" }, gB);
+
+  var edgeEls = edges.map(function (e) {
+    var g = el("g", { "class": "edge" }, gE);
+    el("polyline", {
+      points: e.p.map(function (q) { return q.join(","); }).join(" "),
+      stroke: e.dark ? "#111111" : "#a8a8a8",
+      "marker-end": e.dark ? "url(#ahk)" : "url(#ah)"
+    }, g);
+    if (e.lab) {
+      var t = el("text", { x: e.lab[0], y: e.lab[1], "class": "e-label", stroke: "none" }, g);
+      t.textContent = e.lab[2];
+      if (e.dark) t.setAttribute("style", "fill:#111111");
+    }
+    return g;
+  });
+  var nodeEls = nodes.map(function (n) {
+    var g = el("g", { "class": "node " + n.k, tabindex: "0", role: "button", "aria-label": n.t + ": " + n.l.join(" ") }, gN);
+    el("rect", { "class": "ring", x: n.x - 6, y: n.y - 6, width: n.w + 12, height: H + 12, rx: 16, fill: "none", stroke: "#111111", "stroke-width": 2 }, g);
+    var fill = n.k === "ml" ? "#ececec" : n.k === "hum" ? "#111111" : "#ffffff";
+    var stroke = (n.k === "ai" || n.k === "hum") ? "#111111" : "#c4c4c4";
+    el("rect", { x: n.x, y: n.y, width: n.w, height: H, rx: 12, fill: fill, stroke: stroke, "stroke-width": n.k === "ai" ? 2.5 : 1.5 }, g);
+    var t = el("text", { x: n.x + 16, y: n.y + 33, "class": "n-title" }, g); t.textContent = n.t;
+    n.l.forEach(function (line, i) {
+      var s = el("text", { x: n.x + 16, y: n.y + 58 + i * 21, "class": "n-sub" }, g); s.textContent = line;
+    });
+    g.addEventListener("click", function () { stop(); go(n.s); });
+    g.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); stop(); go(n.s); }
+    });
+    return g;
+  });
+
+  var rowsBox = document.getElementById("rows");
+  var rowEls = rows.map(function (r) {
+    var d = document.createElement("div");
+    d.className = "row";
+    d.innerHTML = "<b></b><span class=\"pill " + (r.ok ? "ok" : "flag") + "\"></span><i></i>";
+    d.children[0].textContent = r.f;
+    d.children[1].textContent = r.v;
+    d.children[2].textContent = r.q;
+    rowsBox.appendChild(d);
+    return d;
+  });
+
+  var N = steps.length - 1, cur = 0, timer = null;
+  var $n = document.getElementById("step-n"), $t = document.getElementById("step-t"), $d = document.getElementById("step-d");
+  var $play = document.getElementById("play");
+
+  function go(s) {
+    cur = Math.max(0, Math.min(N, s));
+    nodes.forEach(function (n, i) {
+      nodeEls[i].classList.toggle("dim", cur > 0 && n.s > cur);
+      nodeEls[i].classList.toggle("cur", cur > 0 && n.s === cur);
+    });
+    edges.forEach(function (e, i) { edgeEls[i].classList.toggle("dim", cur > 0 && e.s > cur); });
+    boxEl.classList.toggle("dim", cur > 0 && cur < 7);
+    rows.forEach(function (r, i) { rowEls[i].classList.toggle("dim", cur > 0 && r.s > cur); });
+    if (cur === 0) {
+      $n.textContent = "Vista general · " + N + " pasos";
+      $t.textContent = "Un expediente entra, una ficha con citas sale";
+      $d.textContent = "Pulsa Reproducir para seguir un expediente de ejemplo por el pipeline, o haz clic en cualquier caja para saltar a ese paso.";
+    } else {
+      $n.textContent = "Paso " + cur + "/" + N;
+      $t.textContent = steps[cur][0];
+      $d.textContent = steps[cur][1];
+    }
+  }
+  function stop() { if (timer) { clearInterval(timer); timer = null; } $play.textContent = "Reproducir"; }
+  function play() {
+    if (timer) { stop(); return; }
+    if (cur >= N) go(0);
+    go(cur + 1);
+    $play.textContent = "Pausa";
+    timer = setInterval(function () { if (cur >= N) { stop(); return; } go(cur + 1); }, 3800);
+  }
+  $play.addEventListener("click", play);
+  document.getElementById("next").addEventListener("click", function () { stop(); go(cur + 1); });
+  document.getElementById("prev").addEventListener("click", function () { stop(); go(cur - 1); });
+  document.getElementById("all").addEventListener("click", function () { stop(); go(0); });
+  go(0);
+})();
+</script>
